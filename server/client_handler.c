@@ -41,9 +41,65 @@ void *handle_client(void *arg) {
 
         printf("[CLIENT CMD] %s\n", buffer);
 
-        // Basic parser (team will expand this)
+        // Basic parser (team will expand this): Shreya
         if (strncmp(buffer, "sendmessage", 11) == 0) {
-            // TODO Shreya
+            // Format from client: "sendmessage <user> <message>"
+
+            // Extract sender username
+            char sender[50];
+            int found = 0;
+
+            pthread_mutex_lock(&user_lock);
+            for (int i = 0; i < user_count; i++) {
+                if (active_users[i].socket_fd == client_socket) {
+                    strcpy(sender, active_users[i].username);
+                    found = 1;
+                    break;
+                }
+            }
+            pthread_mutex_unlock(&user_lock);
+
+            if (!found) {
+                send(client_socket, "ERROR: Unknown user.\n", 22, 0);
+                return NULL;
+            }
+
+            // Parse command
+            char *cmd = strtok(buffer, " ");     // "sendmessage"
+            char *receiver = strtok(NULL, " ");  // <user>
+            char *message = strtok(NULL, "");    // <message text>
+
+            if (!receiver || !message) {
+                send(client_socket, "Usage: sendmessage <user> <message>\n", 37, 0);
+                return NULL;
+            }
+
+            // SEARCH if receiver exists and is online
+            int receiver_socket = -1;
+
+            pthread_mutex_lock(&user_lock);
+            for (int i = 0; i < user_count; i++) {
+                if (strcmp(active_users[i].username, receiver) == 0) {
+                    receiver_socket = active_users[i].socket_fd;
+                    break;
+                }
+            }
+            pthread_mutex_unlock(&user_lock);
+
+            // IF RECEIVER IS ONLINE
+            if (receiver_socket != -1) {
+                char deliver_msg[1200];
+                sprintf(deliver_msg, "Message from %s: %s\n", sender, message);
+
+                send(receiver_socket, deliver_msg, strlen(deliver_msg), 0);
+
+                send(client_socket, "Message delivered.\n", 20, 0);
+            } 
+            else {
+                // Receiver offline → (optional) store for later
+                send(client_socket, "User offline. Message not delivered.\n", 38, 0);
+            }
+
         }
         else if (strncmp(buffer, "getmessages", 11) == 0) {
             // TODO Varnika
