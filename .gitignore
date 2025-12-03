@@ -1,3 +1,22 @@
+# macOS system files
 .DS_Store
-client/client
+
+# Compiled binaries (server + client)
 server/server
+client/client
+
+# Object files
+*.o
+
+# Backup files
+*~
+
+# Message database (should NOT be version controlled)
+# It was creating a problem when multiple users were working on the project simultaneously
+server/messages.db
+
+# Logs
+*.log
+
+# Temporary files
+tmp/
