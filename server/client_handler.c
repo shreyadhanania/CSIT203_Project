@@ -38,7 +38,7 @@ void *handle_client(void *arg) {
     int client_socket = *(int *)arg;
     free(arg);
 
-    char buffer[1024];
+    char buffer[2048];
 
     // ---- CONNECTION MANAGEMENT: "connect <username>" ----
     int valread = read(client_socket, buffer, sizeof(buffer) - 1);
@@ -49,10 +49,10 @@ void *handle_client(void *arg) {
 
     buffer[valread] = '\0';
 
-    char command[20], username[50];
+    char command[32], username[50];
 
     // Expect: connect <username>
-    if (sscanf(buffer, "%19s %49s", command, username) != 2) {
+    if (sscanf(buffer, "%31s %49s", command, username) != 2) {
         const char *err = "ERROR: Use format: connect <username>\n";
         send(client_socket, err, strlen(err), 0);
         close(client_socket);
@@ -66,8 +66,20 @@ void *handle_client(void *arg) {
         return NULL;
     }
 
-    // Check username uniqueness
+    // Trim newline/whitespace from username
+    trim_newline(username);
+
+    // Check username uniqueness and capacity
     pthread_mutex_lock(&user_lock);
+
+    if (user_count >= MAX_CLIENTS) {
+        pthread_mutex_unlock(&user_lock);
+        const char *err = "ERROR: Server full. Try later.\n";
+        send(client_socket, err, strlen(err), 0);
+        close(client_socket);
+        return NULL;
+    }
+
     for (int i = 0; i < user_count; i++) {
         if (strcmp(active_users[i].username, username) == 0) {
             pthread_mutex_unlock(&user_lock);
@@ -83,14 +95,15 @@ void *handle_client(void *arg) {
     }
 
     // Register new user
-    strcpy(active_users[user_count].username, username);
+    strncpy(active_users[user_count].username, username, sizeof(active_users[user_count].username)-1);
+    active_users[user_count].username[sizeof(active_users[user_count].username)-1] = '\0';
     active_users[user_count].socket_fd = client_socket;
     user_count++;
 
     pthread_mutex_unlock(&user_lock);
 
     // Confirm registration
-    char success_msg[100];
+    char success_msg[128];
     snprintf(success_msg, sizeof(success_msg),
              "Connected successfully as %s\n", username);
     send(client_socket, success_msg, strlen(success_msg), 0);
@@ -105,6 +118,9 @@ void *handle_client(void *arg) {
             break;
 
         buffer[valread] = '\0';
+
+        // Remove trailing newline for easier parsing
+        trim_newline(buffer);
 
         printf("[CLIENT CMD] %s\n", buffer);
 
@@ -132,22 +148,34 @@ void *handle_client(void *arg) {
                 continue;
             }
 
-            // 2) parse command
-            char *cmd     = strtok(buffer, " ");  // "sendmessage"
-            char *receiver = strtok(NULL, " ");   // <user>
-            char *message  = strtok(NULL, "");    // <message text>
-
-            (void)cmd; // unused variable warning silencer
-
-            if (!receiver || !message) {
-                const char *usage =
-                    "Usage: sendmessage <user> <message>\n";
+            // 2) parse command: separate receiver and message
+            // We want to preserve spaces in message, so find first two tokens
+            char *space = strchr(buffer, ' ');
+            if (!space) {
+                const char *usage = "Usage: sendmessage <user> <message>\n";
                 send(client_socket, usage, strlen(usage), 0);
                 continue;
             }
+            char *after_cmd = space + 1;
+            char receiver[50];
+            // get receiver token
+            if (sscanf(after_cmd, "%49s", receiver) != 1) {
+                const char *usage = "Usage: sendmessage <user> <message>\n";
+                send(client_socket, usage, strlen(usage), 0);
+                continue;
+            }
+            // message begins after receiver token
+            char *msg_start = strchr(after_cmd, ' ');
+            if (!msg_start) {
+                const char *usage = "Usage: sendmessage <user> <message>\n";
+                send(client_socket, usage, strlen(usage), 0);
+                continue;
+            }
+            // skip the space after receiver
+            msg_start = msg_start + 1;
 
-            // store in DB
-            db_store_message(sender, receiver, message);
+            // store in DB (db functions handle their own locking)
+            db_store_message(sender, receiver, msg_start);
 
             // 3) find receiver socket if online
             int receiver_socket = -1;
@@ -162,55 +190,55 @@ void *handle_client(void *arg) {
             pthread_mutex_unlock(&user_lock);
 
             if (receiver_socket != -1) {
-                char deliver_msg[1200];
+                // include timestamp for forwarded message
+                char timestamp[64];
+                current_timestamp(timestamp, sizeof(timestamp));
+
+                char deliver_msg[1600];
                 snprintf(deliver_msg, sizeof(deliver_msg),
-                         "Message from %s: %s\n", sender, message);
+                         "[%s] Message from %s: %s\n", timestamp, sender, msg_start);
 
                 send(receiver_socket, deliver_msg, strlen(deliver_msg), 0);
                 const char *ok = "Message delivered.\n";
                 send(client_socket, ok, strlen(ok), 0);
             } else {
                 const char *offline =
-                    "User offline. Message not delivered.\n";
+                    "User offline. Message stored for later retrieval.\n";
                 send(client_socket, offline, strlen(offline), 0);
             }
         }
 
         // GETMESSAGES -------------------------------------------------
         else if (strncmp(buffer, "getmessages", 11) == 0) {
-        char current_user[50];
+            char current_user[50];
 
-        // 1) Identify which user is asking
-        if (!get_username_for_socket(client_socket, current_user)) {
-            const char *err = "ERROR: Unknown user.\n";
-            send(client_socket, err, strlen(err), 0);
-            continue;
+            // 1) Identify which user is asking
+            if (!get_username_for_socket(client_socket, current_user)) {
+                const char *err = "ERROR: Unknown user.\n";
+                send(client_socket, err, strlen(err), 0);
+                continue;
+            }
+
+            // 2) Parse: getmessages <other_user>
+            char cmd[64], other[50];
+            if (sscanf(buffer, "%63s %49s", cmd, other) != 2) {
+                const char *usage = "Usage: getmessages <user>\n";
+                send(client_socket, usage, strlen(usage), 0);
+                continue;
+            }
+
+            // 3) Check if ANY HISTORY EXISTS (offline or online)
+            int exists = db_user_exists_in_history(current_user, other);
+
+            if (!exists) {
+                const char *no_hist = "No message history with this user.\n";
+                send(client_socket, no_hist, strlen(no_hist), 0);
+                continue;
+            }
+
+            // 4) Display all messages (from DB)
+            db_get_messages(current_user, other, client_socket);
         }
-
-        // 2) Parse: getmessages <other_user>
-        char *cmd   = strtok(buffer, " ");
-        char *other = strtok(NULL, " \n");
-        (void)cmd;
-
-        if (!other) {
-            const char *usage = "Usage: getmessages <user>\n";
-            send(client_socket, usage, strlen(usage), 0);
-            continue;
-        }
-
-        // 3) Check if ANY HISTORY EXISTS (offline or online)
-        int exists = db_user_exists_in_history(current_user, other);
-
-        if (!exists) {
-            const char *no_hist = "No message history with this user.\n";
-            send(client_socket, no_hist, strlen(no_hist), 0);
-            continue;
-        }
-
-        // 4) Display all messages (from DB)
-        db_get_messages(current_user, other, client_socket);
-    }
-
 
         // DELETEMESSAGES ----------------------------------------------
         else if (strncmp(buffer, "deletemessages", 14) == 0) {
@@ -224,13 +252,9 @@ void *handle_client(void *arg) {
             }
 
             // 2) parse "deletemessages <other_user>"
-            char *cmd   = strtok(buffer, " ");     // "deletemessages"
-            char *other = strtok(NULL, " \n");     // <other_user>
-            (void)cmd;
-
-            if (!other) {
-                const char *usage =
-                    "Usage: deletemessages <user>\n";
+            char cmd[64], other[50];
+            if (sscanf(buffer, "%63s %49s", cmd, other) != 2) {
+                const char *usage = "Usage: deletemessages <user>\n";
                 send(client_socket, usage, strlen(usage), 0);
                 continue;
             }
@@ -255,7 +279,7 @@ void *handle_client(void *arg) {
         else if (strncmp(buffer, "getuserlist", 11) == 0) {
             pthread_mutex_lock(&user_lock);
 
-            char listbuf[512];
+            char listbuf[1024];
             int offset = 0;
 
             offset += snprintf(listbuf + offset,
@@ -266,6 +290,7 @@ void *handle_client(void *arg) {
                 offset += snprintf(listbuf + offset,
                                    sizeof(listbuf) - offset,
                                    "%s\n", active_users[i].username);
+                if (offset >= (int)sizeof(listbuf) - 100) break;
             }
 
             pthread_mutex_unlock(&user_lock);
@@ -276,36 +301,39 @@ void *handle_client(void *arg) {
         // EXIT --------------------------------------------------------
         else if (strncmp(buffer, "exit", 4) == 0) {
 
-        char username[50];
-        int found = get_username_for_socket(client_socket, username);
+            char username[50];
+            int found = get_username_for_socket(client_socket, username);
 
-        if (found) {
-            // 1. Send bye message to the exiting client
-            char bye_msg[100];
-            snprintf(bye_msg, sizeof(bye_msg),
-                    "Byeeee %s! You have been disconnected.\n", username);
-            send(client_socket, bye_msg, strlen(bye_msg), 0);
+            if (found) {
+                // 1. Send bye message to the exiting client
+                char bye_msg[128];
+                snprintf(bye_msg, sizeof(bye_msg),
+                        "Byeeee %s! You have been disconnected.\n", username);
+                send(client_socket, bye_msg, strlen(bye_msg), 0);
 
-            printf("[SERVER] User requested exit: %s\n", username);
+                printf("[SERVER] User requested exit: %s\n", username);
 
-            // 2. Broadcast to other online users
-            pthread_mutex_lock(&user_lock);
-            for (int i = 0; i < user_count; i++) {
-                int other_socket = active_users[i].socket_fd;
+                // 2. Broadcast to other online users
+                pthread_mutex_lock(&user_lock);
+                for (int i = 0; i < user_count; i++) {
+                    int other_socket = active_users[i].socket_fd;
 
-                if (other_socket != client_socket) {
-                    char notify_msg[100];
-                    snprintf(notify_msg, sizeof(notify_msg),
-                            "%s has gone offline.\n", username);
+                    if (other_socket != client_socket) {
+                        char notify_msg[128];
+                        snprintf(notify_msg, sizeof(notify_msg),
+                                "%s has gone offline.\n", username);
 
-                    send(other_socket, notify_msg, strlen(notify_msg), 0);
+                        send(other_socket, notify_msg, strlen(notify_msg), 0);
+                    }
                 }
+                pthread_mutex_unlock(&user_lock);
             }
-            pthread_mutex_unlock(&user_lock);
-        }
 
             // 3. Exit the loop → triggers cleanup at bottom
             break;
+        } else {
+            const char *unknown = "Unknown command. Available: sendmessage, getmessages, deletemessages, getuserlist, exit\n";
+            send(client_socket, unknown, strlen(unknown), 0);
         }
     }
 

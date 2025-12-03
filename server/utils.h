@@ -2,6 +2,8 @@
 #define UTILS_H
 
 void trim_newline(char *str);
-void parse_command(char *input, char *cmd, char *arg1, char *arg2, char *msg);
+
+// Fill buf (size) with current timestamp in "YYYY-MM-DD HH:MM:SS" format
+void current_timestamp(char *buf, size_t size);
 
 #endif

@@ -1,22 +1,22 @@
 #include <string.h>
-#include <ctype.h>
+#include <time.h>
+#include <stdio.h>
 #include "utils.h"
 
 void trim_newline(char *str) {
-    int len = strlen(str);
-    if (str[len-1] == '\n') str[len-1] = '\0';
+    if (!str) return;
+    size_t len = strlen(str);
+    while (len > 0 && (str[len-1] == '\n' || str[len-1] == '\r')) {
+        str[len-1] = '\0';
+        len--;
+    }
 }
 
-void parse_command(char *input, char *cmd, char *arg1, char *arg2, char *msg) {
-    // cmd
-    char *token = strtok(input, " ");
-    if (token) strcpy(cmd, token);
-
-    // arg1
-    token = strtok(NULL, " ");
-    if (token) strcpy(arg1, token);
-
-    // arg2 or message
-    token = strtok(NULL, "\n");
-    if (token) strcpy(msg, token);
+// Format: YYYY-MM-DD HH:MM:SS
+void current_timestamp(char *buf, size_t size) {
+    if (!buf || size == 0) return;
+    time_t t = time(NULL);
+    struct tm tm;
+    localtime_r(&t, &tm);
+    strftime(buf, size, "%Y-%m-%d %H:%M:%S", &tm);
 }

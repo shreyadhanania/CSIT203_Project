@@ -4,32 +4,26 @@
 #include <unistd.h>
 #include <pthread.h>
 #include <arpa/inet.h>
+#include <signal.h>
 
 #include "server.h"
 #include "client_handler.h"
 
-#include <signal.h>
-
-extern pthread_mutex_t user_lock;
-extern User active_users[];
-extern int user_count;
-
-#define MAX_CLIENTS 50
-
+// Globals (defined here)
 pthread_mutex_t user_lock = PTHREAD_MUTEX_INITIALIZER;
 User active_users[MAX_CLIENTS];
 int user_count = 0;
 
 void shutdown_handler(int sig) {
-    (void)sig; // unused
+    (void)sig;
     printf("\n[SERVER] Shutdown signal received. Broadcasting message...\n");
 
     pthread_mutex_lock(&user_lock);
     for (int i = 0; i < user_count; i++) {
-    int sock = active_users[i].socket_fd;
-    if (sock > 0) {
-        send(sock, "Server shutting down...\n", strlen("Server shutting down...\n"), 0);
-        close(sock);
+        int sock = active_users[i].socket_fd;
+        if (sock > 0) {
+            send(sock, "Server shutting down...\n", strlen("Server shutting down...\n"), 0);
+            close(sock);
         }
     }
     pthread_mutex_unlock(&user_lock);
@@ -86,6 +80,11 @@ int main() {
 
         pthread_t tid;
         int *socket_ptr = malloc(sizeof(int));
+        if (!socket_ptr) {
+            perror("malloc");
+            close(new_socket);
+            continue;
+        }
         *socket_ptr = new_socket;
 
         pthread_create(&tid, NULL, handle_client, socket_ptr);

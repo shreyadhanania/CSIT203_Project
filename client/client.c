@@ -32,24 +32,29 @@ int connect_to_server(const char *ip, int port) {
     return sock;
 }
 
-int main() {
-    int sock = connect_to_server("127.0.0.1", 8080);
+int main(int argc, char *argv[]) {
+    if (argc < 2) {
+        printf("Usage: ./client <server_ip>\n");
+        return 1;
+    }
 
-    //SEND USERNAME USING "connect <username>" COMMAND
+    int sock = connect_to_server(argv[1], 8080);
 
-    char username[50];   //Buffer to hold the username input
-    printf("Enter username: ");    //Prompt the user to enter a username
-    fgets(username, sizeof(username), stdin);   //Read the username from standard input
-    username[strcspn(username, "\n")] = 0;    //Remove the newline character from the input
+    char username[50];
+    printf("Enter username: ");
+    fgets(username, sizeof(username), stdin);
+    username[strcspn(username, "\n")] = 0;
 
-    char connect_cmd[100];    //Buffer to hold the formatted connect command
-    sprintf(connect_cmd, "connect %s\n", username);    //Format the connect command with the username
+    char connect_cmd[100];
+    sprintf(connect_cmd, "connect %s\n", username);
+    send(sock, connect_cmd, strlen(connect_cmd), 0);
 
-    send(sock, connect_cmd, strlen(connect_cmd), 0);    //Send the connect command to the server
-
+    // SAFE THREAD ARG PASSING
+    int *sock_ptr = malloc(sizeof(int));
+    *sock_ptr = sock;
 
     pthread_t tid;
-    pthread_create(&tid, NULL, listener, &sock);
+    pthread_create(&tid, NULL, listener, sock_ptr);
 
     char buffer[1024];
 
@@ -60,11 +65,13 @@ int main() {
         if (!fgets(buffer, sizeof(buffer), stdin))
             break;
 
-        send(sock, buffer, strlen(buffer), 0);
+        buffer[strcspn(buffer, "\n")] = 0; // remove newline
+        char cleanbuf[1024];
+        sprintf(cleanbuf, "%s\n", buffer);
 
-        // EXIT handling
+        send(sock, cleanbuf, strlen(cleanbuf), 0);
+
         if (strncmp(buffer, "exit", 4) == 0) {
-            // Wait for server's bye message
             char recvbuf[1024];
             int n = recv(sock, recvbuf, sizeof(recvbuf) - 1, 0);
 
@@ -73,14 +80,10 @@ int main() {
                 printf("%s", recvbuf);
             }
 
-            // Gracefully stop listener thread
             shutdown(sock, SHUT_RDWR);
-
             printf("Connection closed.\n");
             break;
         }
-
-
     }
 
     close(sock);
