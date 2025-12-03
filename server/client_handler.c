@@ -9,6 +9,9 @@
 
 #include "client_handler.h"
 #include "server.h"
+#include "database.h"
+#include "utils.h"
+#include "message_commands.h"
 
 extern pthread_mutex_t user_lock;
 
@@ -150,10 +153,10 @@ printf("[SERVER] Registered new user: %s\n", username);  //Print a confirmation 
 
         }
         else if (strncmp(buffer, "getmessages", 11) == 0) {
-            // TODO Varnika
+            handle_getmessages(client_socket, buffer);
         }
         else if (strncmp(buffer, "deletemessages", 14) == 0) {
-            // TODO Varnika
+            handle_deletemessages(client_socket, buffer);
         }
         else if (strncmp(buffer, "getuserlist", 11) == 0) {
             // TODO Navreet
