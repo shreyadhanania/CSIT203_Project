@@ -12,6 +12,7 @@
 #include "database.h"
 #include "utils.h"
 #include "message_commands.h"
+#include "user_list.h"
 
 extern pthread_mutex_t user_lock;
 
