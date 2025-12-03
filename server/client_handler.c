@@ -125,6 +125,9 @@ printf("[SERVER] Registered new user: %s\n", username);  //Print a confirmation 
                 return NULL;
             }
 
+            db_store_message(sender, receiver, message); //Stores message to DB
+
+
             // SEARCH if receiver exists and is online
             int receiver_socket = -1;
 
