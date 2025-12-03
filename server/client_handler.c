@@ -296,7 +296,7 @@ void *handle_client(void *arg) {
         int found = get_username_for_socket(client_socket, username);
 
         if (found) {
-            // 1. Send goodbye message to the exiting client
+            // 1. Send bye message to the exiting client
             char bye_msg[100];
             snprintf(bye_msg, sizeof(bye_msg),
                     "Byeeee %s! You have been disconnected.\n", username);

@@ -62,8 +62,21 @@ int main() {
 
         send(sock, buffer, strlen(buffer), 0);
 
-        if (strncmp(buffer, "exit", 4) == 0)
+        // EXIT handling
+        if (strncmp(buffer, "exit", 4) == 0) {
+            // Wait for server's bye message
+            char recvbuf[1024];
+            int n = recv(sock, recvbuf, sizeof(recvbuf) - 1, 0);
+
+            if (n > 0) {
+                recvbuf[n] = '\0';
+                printf("%s", recvbuf);   // <-- prints “Byeeee <username>! …”
+            }
+
+            printf("Connection closed.\n");
             break;
+        }
+
     }
 
     close(sock);
