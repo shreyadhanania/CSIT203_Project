@@ -73,3 +73,23 @@ void db_delete_messages(const char *user1, const char *user2) {
     remove(DB_FILE);
     rename("temp.db", DB_FILE);
 }
+
+int db_user_exists_in_history(const char *user1, const char *user2) {
+    FILE *fp = fopen(DB_FILE, "r");
+    if (!fp) return 0;
+
+    char line[1200];
+    while (fgets(line, sizeof(line), fp)) {
+        char s[50], r[50], msg[1024];
+        sscanf(line, "%49[^|]|%49[^|]|%1023[^\n]", s, r, msg);
+
+        if ((strcmp(s, user1)==0 && strcmp(r,user2)==0) ||
+            (strcmp(s, user2)==0 && strcmp(r,user1)==0)) {
+            fclose(fp);
+            return 1;   // FOUND history
+        }
+    }
+
+    fclose(fp);
+    return 0; // NO history
+}

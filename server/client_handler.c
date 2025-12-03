@@ -178,47 +178,39 @@ void *handle_client(void *arg) {
 
         // GETMESSAGES -------------------------------------------------
         else if (strncmp(buffer, "getmessages", 11) == 0) {
-            char current_user[50];
+        char current_user[50];
 
-            // 1) who is asking?
-            if (!get_username_for_socket(client_socket, current_user)) {
-                const char *err = "ERROR: Unknown user.\n";
-                send(client_socket, err, strlen(err), 0);
-                continue;
-            }
-
-            // 2) parse "getmessages <other_user>"
-            char *cmd   = strtok(buffer, " ");     // "getmessages"
-            char *other = strtok(NULL, " \n");     // <other_user>
-            (void)cmd;
-
-            if (!other) {
-                const char *usage =
-                    "Usage: getmessages <user>\n";
-                send(client_socket, usage, strlen(usage), 0);
-                continue;
-            }
-
-            // 3) check if target user exists
-            int exists = 0;
-            pthread_mutex_lock(&user_lock);
-            for (int i = 0; i < user_count; i++) {
-                if (strcmp(active_users[i].username, other) == 0) {
-                    exists = 1;
-                    break;
-                }
-            }
-            pthread_mutex_unlock(&user_lock);
-
-            if (!exists) {
-                const char *no_user = "Client does not exist.\n";
-                send(client_socket, no_user, strlen(no_user), 0);
-                continue;
-            }
-
-            // 4) show all messages between current_user and other
-            db_get_messages(current_user, other, client_socket);
+        // 1) Identify which user is asking
+        if (!get_username_for_socket(client_socket, current_user)) {
+            const char *err = "ERROR: Unknown user.\n";
+            send(client_socket, err, strlen(err), 0);
+            continue;
         }
+
+        // 2) Parse: getmessages <other_user>
+        char *cmd   = strtok(buffer, " ");
+        char *other = strtok(NULL, " \n");
+        (void)cmd;
+
+        if (!other) {
+            const char *usage = "Usage: getmessages <user>\n";
+            send(client_socket, usage, strlen(usage), 0);
+            continue;
+        }
+
+        // 3) Check if ANY HISTORY EXISTS (offline or online)
+        int exists = db_user_exists_in_history(current_user, other);
+
+        if (!exists) {
+            const char *no_hist = "No message history with this user.\n";
+            send(client_socket, no_hist, strlen(no_hist), 0);
+            continue;
+        }
+
+        // 4) Display all messages (from DB)
+        db_get_messages(current_user, other, client_socket);
+    }
+
 
         // DELETEMESSAGES ----------------------------------------------
         else if (strncmp(buffer, "deletemessages", 14) == 0) {
@@ -243,20 +235,12 @@ void *handle_client(void *arg) {
                 continue;
             }
 
-            // 3) check if target user exists
-            int exists = 0;
-            pthread_mutex_lock(&user_lock);
-            for (int i = 0; i < user_count; i++) {
-                if (strcmp(active_users[i].username, other) == 0) {
-                    exists = 1;
-                    break;
-                }
-            }
-            pthread_mutex_unlock(&user_lock);
+            // 3. Allow messages even if user is offline
+            int exists = db_user_exists_in_history(current_user, other);
 
             if (!exists) {
-                const char *no_user = "Client does not exist.\n";
-                send(client_socket, no_user, strlen(no_user), 0);
+                const char *no_hist = "No message history with this user.\n";
+                send(client_socket, no_hist, strlen(no_hist), 0);
                 continue;
             }
 

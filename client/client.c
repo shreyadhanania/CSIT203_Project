@@ -70,12 +70,16 @@ int main() {
 
             if (n > 0) {
                 recvbuf[n] = '\0';
-                printf("%s", recvbuf);   // <-- prints “Byeeee <username>! …”
+                printf("%s", recvbuf);
             }
+
+            // Gracefully stop listener thread
+            shutdown(sock, SHUT_RDWR);
 
             printf("Connection closed.\n");
             break;
         }
+
 
     }
 

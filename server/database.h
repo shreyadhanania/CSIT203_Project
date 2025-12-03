@@ -10,4 +10,7 @@ void db_get_messages(const char *user1, const char *user2, int client_fd);
 // Delete all messages between two users
 void db_delete_messages(const char *user1, const char *user2);
 
+// Check if any message history exists between two users
+int db_user_exists_in_history(const char *user1, const char *user2);
+
 #endif

@@ -8,11 +8,35 @@
 #include "server.h"
 #include "client_handler.h"
 
+#include <signal.h>
+
+extern pthread_mutex_t user_lock;
+extern User active_users[];
+extern int user_count;
+
 #define MAX_CLIENTS 50
 
 pthread_mutex_t user_lock = PTHREAD_MUTEX_INITIALIZER;
 User active_users[MAX_CLIENTS];
 int user_count = 0;
+
+void shutdown_handler(int sig) {
+    (void)sig; // unused
+    printf("\n[SERVER] Shutdown signal received. Broadcasting message...\n");
+
+    pthread_mutex_lock(&user_lock);
+    for (int i = 0; i < user_count; i++) {
+    int sock = active_users[i].socket_fd;
+    if (sock > 0) {
+        send(sock, "Server shutting down...\n", strlen("Server shutting down...\n"), 0);
+        close(sock);
+        }
+    }
+    pthread_mutex_unlock(&user_lock);
+
+    printf("[SERVER] All clients disconnected. Exiting.\n");
+    exit(0);
+}
 
 int main() {
     int server_fd, new_socket;
@@ -46,6 +70,9 @@ int main() {
     }
 
     printf("[SERVER] Running on port 8080...\n");
+
+    // Install shutdown handler for Ctrl+C
+    signal(SIGINT, shutdown_handler);
 
     while (1) {
         new_socket = accept(server_fd, (struct sockaddr*)&address, (socklen_t*)&addrlen);
