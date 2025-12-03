@@ -291,7 +291,36 @@ void *handle_client(void *arg) {
 
         // EXIT --------------------------------------------------------
         else if (strncmp(buffer, "exit", 4) == 0) {
-            // Flora: graceful client shutdown (basic version)
+
+        char username[50];
+        int found = get_username_for_socket(client_socket, username);
+
+        if (found) {
+            // 1. Send goodbye message to the exiting client
+            char bye_msg[100];
+            snprintf(bye_msg, sizeof(bye_msg),
+                    "Byeeee %s! You have been disconnected.\n", username);
+            send(client_socket, bye_msg, strlen(bye_msg), 0);
+
+            printf("[SERVER] User requested exit: %s\n", username);
+
+            // 2. Broadcast to other online users
+            pthread_mutex_lock(&user_lock);
+            for (int i = 0; i < user_count; i++) {
+                int other_socket = active_users[i].socket_fd;
+
+                if (other_socket != client_socket) {
+                    char notify_msg[100];
+                    snprintf(notify_msg, sizeof(notify_msg),
+                            "%s has gone offline.\n", username);
+
+                    send(other_socket, notify_msg, strlen(notify_msg), 0);
+                }
+            }
+            pthread_mutex_unlock(&user_lock);
+        }
+
+            // 3. Exit the loop → triggers cleanup at bottom
             break;
         }
     }
