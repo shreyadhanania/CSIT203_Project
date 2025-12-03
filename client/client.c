@@ -35,6 +35,19 @@ int connect_to_server(const char *ip, int port) {
 int main() {
     int sock = connect_to_server("127.0.0.1", 8080);
 
+    //SEND USERNAME USING "connect <username>" COMMAND
+
+    char username[50];   //Buffer to hold the username input
+    printf("Enter username: ");    //Prompt the user to enter a username
+    fgets(username, sizeof(username), stdin);   //Read the username from standard input
+    username[strcspn(username, "\n")] = 0;    //Remove the newline character from the input
+
+    char connect_cmd[100];    //Buffer to hold the formatted connect command
+    sprintf(connect_cmd, "connect %s\n", username);    //Format the connect command with the username
+
+    send(sock, connect_cmd, strlen(connect_cmd), 0);    //Send the connect command to the server
+
+
     pthread_t tid;
     pthread_create(&tid, NULL, listener, &sock);
 
