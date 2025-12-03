@@ -12,9 +12,10 @@
 #include "database.h"
 #include "utils.h"
 #include "message_commands.h"
-#include "user_list.h"
 
 extern pthread_mutex_t user_lock;
+extern User active_users[];
+extern int user_count;
 
 void *handle_client(void *arg) {
     int client_socket = *(int*)arg;
@@ -163,8 +164,22 @@ printf("[SERVER] Registered new user: %s\n", username);  //Print a confirmation 
             handle_deletemessages(client_socket, buffer);
         }
         else if (strncmp(buffer, "getuserlist", 11) == 0) {
-            // TODO Navreet
-        }
+            pthread_mutex_lock(&user_lock);
+
+            char listbuf[512];
+            int offset = 0;
+
+            offset += snprintf(listbuf + offset, sizeof(listbuf) - offset, "Active Users:\n");
+
+            for (int i = 0; i < user_count; i++) {
+                offset += snprintf(listbuf + offset, sizeof(listbuf) - offset, "%s\n", active_users[i].username);
+            }
+
+            pthread_mutex_unlock(&user_lock);
+
+            send(client_socket, listbuf, strlen(listbuf), 0);
+        }//navreet
+
         else if (strncmp(buffer, "exit", 4) == 0) {
             // TODO Flora: graceful client shutdown
             break;
